@@ -3,27 +3,7 @@ const router = express.Router();
 const bdd = require('../bdd');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-
-const authentification = (req, res, next) => {
-    const token = req.headers['authorization'];
-    if (token) {
-        console.log('Token reçu', token);
-        jwt.verify(token.split('')[1], 'secretkey', (error, decode) => {
-            if (error) {
-                console.log('Errur de vérification du token :', error);
-                console.log(token);
-                return res.status(401).send('token incorrect');
-            } else {
-                req.userId = decode.id;
-                next();
-            }
-        });
-
-    } else {
-        res.status(401).send('aucun token');
-    }
-}
-
+const auth = require('../middleware/auth');
 
 // router.post('/login', (req, res) => {
 //     const { mail, password } = req.body;
@@ -44,9 +24,12 @@ const authentification = (req, res, next) => {
 
 
 // Login avec bcrypt et token
+
+
+
 router.post('/login', (req, res) => {
     const { mail, password } = req.body;
-    const loginUser = "SELECT * FROM users WHERE mail LIKE ?;";
+    const loginUser = "SELECT * FROM users WHERE mail = ?;";
     bdd.query(loginUser, [mail], (error, result) => {
         if (error) throw error;
         if (result.length > 0) {
@@ -57,8 +40,8 @@ router.post('/login', (req, res) => {
                 if (toto) {
                     // .sign c'est la création et il va comporter, il vaut mieux envoyer l'email plutôt que l'ID parce qu'avec l'ID, on peut récupérer toutes les infos du users
                     // on aurait pu mettre {id: user.idUser, mail: user.mail} et on peut rajouter ce qu'on veut, même un message "message" : "ceci est un token"
-                    const token = jwt.sign({id: user.idUser}, 'secretkey', { expiresIn: '3h'});
-                    res.json({token});
+                    const token = jwt.sign({ id: user.idUser, role: user.role }, 'secretkey', { expiresIn: '3h' });
+                    res.json({ token });
                 } else {
                     res.status(401).send('mot de passe incorrect');
                 }
@@ -76,8 +59,8 @@ router.post('/login', (req, res) => {
 
 // Ajouter user avec mot de passe crypté
 router.post('/addUser', (req, res) => {
-    const {firstname, lastname, password, mail} = req.body;
-    const checkMail = "SELECT mail FROM users WHERE mail LIKE ?;";
+    const { firstname, lastname, password, mail } = req.body;
+    const checkMail = "SELECT mail FROM users WHERE mail = ?;";
     bdd.query(checkMail, [mail], (error, result) => {
         // A la place de "if (error) throw error; on peut enlever throw error pour que ça ne crache pas"
         if (error) throw error;
@@ -95,23 +78,27 @@ router.post('/addUser', (req, res) => {
     });
 });
 
-// suppr user
-router.get('/deleteUser/:id', (req, res)=>{
-    const {id} = req.params;
+// suppr user que si on est admin
+router.delete('/deleteUser/:id', auth.authentification, (req, res) => {
+    if (req.role != "admin") {
+        return res.status(401).send('Vous n\'avez pas le droit de supprimer')
+        // Comme il y a un return, ça va bloquer le déroulé la fonction
+    }
+    const { id } = req.params;
     const deleteUser = "DELETE FROM users WHERE idUser = ?;";
-    bdd.query(deleteUser, [id], (error, result)=>{
-        if(error) throw error;
+    bdd.query(deleteUser, [id], (error, result) => {
+        if (error) throw error;
         res.send("utilisateur supprimé");
     });
 });
 
 // Modifier un user
-router.post('/updateUser/:id', (req, res)=>{
-    const {id} = req.params;
-    const {firstname, lastname, password, mail} = req.body;
+router.post('/updateUser/:id', (req, res) => {
+    const { id } = req.params;
+    const { firstname, lastname, password, mail } = req.body;
     const updateUser = "UPDATE users SET firstname=?, lastname=?, password=?, mail=? WHERE idUser=?;";
-    bdd.query(updateUser, [firstname, lastname, password, mail, id], (error, result)=>{
-        if(error) throw error;
+    bdd.query(updateUser, [firstname, lastname, password, mail, id], (error, result) => {
+        if (error) throw error;
         res.send("utilisateur modifié")
     });
 });
@@ -120,49 +107,49 @@ router.post('/updateUser/:id', (req, res)=>{
 router.get('/getAllUser', (req, res) => {
     const getAllUsers = "SELECT * FROM users;";
     bdd.query(getAllUsers, (error, result) => {
-        if(error) throw error;
+        if (error) throw error;
         res.json(result);
     });
 });
 
 
 // Afficher un user en fonction de son mail
-router.get('/getUserById/:id', (req, res)=>{
+router.get('/getUserById/:id', (req, res) => {
     // l'id est identique à celui de l'url, du chemin :id
-    const {id} = req.params;
+    const { id } = req.params;
     const getUserById = 'SELECT * FROM users WHERE mail=?;';
-    bdd.query(getUserById, [id], (error, result) =>{
-        if(error) throw error;
+    bdd.query(getUserById, [id], (error, result) => {
+        if (error) throw error;
         res.json(result);
     });
 });
 
 // Afficher users par tâche
-router.get('/getUserByIdTask/:idTask', (req, res)=>{
-    const {idTask} = req.params;
+router.get('/getUserByIdTask/:idTask', (req, res) => {
+    const { idTask } = req.params;
     const getUserByIdTask = "SELECT tasks.nameTask, state.nameState, users.firstname, users.lastname FROM users INNER JOIN userTask ON users.idUser = userTask.idUser INNER JOIN tasks ON tasks.idTask = userTask.idTask INNER JOIN state ON state.idState = tasks.idState WHERE tasks.idTask=?;";
-    bdd.query(getUserByIdTask,[idTask],(error, result)=>{
-        if(error) throw error;
+    bdd.query(getUserByIdTask, [idTask], (error, result) => {
+        if (error) throw error;
         res.json(result);
     });
 });
 
 // Afficher le nombre de tâches par idUser
-router.get('/getNbTaskByIdUser/:idUser', (req, res)=>{
-    const {idUser} = req.params;
+router.get('/getNbTaskByIdUser/:idUser', (req, res) => {
+    const { idUser } = req.params;
     const getNbTaskByIdUser = "SELECT COUNT(idTask) FROM userTask WHERE idUser =?;";
-    bdd.query(getNbTaskByIdUser,[idUser],(error, result)=>{
-        if(error) throw error;
+    bdd.query(getNbTaskByIdUser, [idUser], (error, result) => {
+        if (error) throw error;
         res.json(result);
     });
 });
 
 // Afficher le nombre de tâches par état en fonction de l'idUser
-router.get('/getNbTaskByStateByIdUser/:idUser', (req, res)=>{
-    const {idUser} = req.params;
+router.get('/getNbTaskByStateByIdUser/:idUser', (req, res) => {
+    const { idUser } = req.params;
     const getNbTaskByStateByIdUser = "SELECT COUNT(tasks.idTask), state.nameState FROM state INNER JOIN tasks ON state.idState = tasks.idState INNER JOIN userTask ON tasks.idTask = userTask.idTask WHERE idUser =? GROUP BY state.nameState ORDER BY state.nameState;";
-    bdd.query(getNbTaskByStateByIdUser,[idUser],(error, result)=>{
-        if(error) throw error;
+    bdd.query(getNbTaskByStateByIdUser, [idUser], (error, result) => {
+        if (error) throw error;
         res.json(result);
     });
 });

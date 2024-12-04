@@ -2,28 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bdd = require('../bdd');
 const jwt = require('jsonwebtoken');
-
-// Déclare une constante authentification
-const authentification = (req, res, next) => {
-    const token = req.header('authorization');
-    console.log(token);
-    
-    if (token) {
-        console.log('Token reçu', token);
-        jwt.verify(token.split(' ')[1], 'secretkey', (error, decode) => {
-            if (error) {
-                console.log('Errur de vérification du token :', error);
-                console.log(token);
-                return res.status(401).send('token incorrect');
-            } else {
-                req.userId = decode.id;
-                next();
-            }
-        });
-    } else {
-        res.status(401).send('aucun token');
-    }
-}
+const auth = require('../middleware/auth');
 
 // Afficher toutes les tâches
 router.get('/allTasks', (req, res) => {
@@ -34,17 +13,18 @@ router.get('/allTasks', (req, res) => {
     })
 });
 
-// Afficher les taches d'un user
-router.get('/getTaskByIdUser', authentification, (req, res) => {
-    console.log("toto");
-    
-    // const { idUser } = req.params; Pas besoin avec l'authentification
-    const getTaskByIdUser = "SELECT tasks.nameTask, tasks.descriptionTask, tasks.idTask, state.nameState, state.idState, users.firstname FROM tasks INNER JOIN userTask ON userTask.idTask = tasks.idTask INNER JOIN users ON users.idUser = userTask.idUser INNER JOIN state ON state.idState = tasks.idState WHERE users.idUser=?;";
-    bdd.query(getTaskByIdUser, [req.userId], (error, result) => {
+// Afficher tâches avec condition dans le back en fonction du role du user
+router.get('/getTaskByIdUser', auth.authentification, (req, res) => {
+    let getTask = "";
+    if(req.role == "admin") {
+        getTask = "SELECT tasks.nameTask, tasks.descriptionTask, tasks.idTask, state.nameState, state.idState, users.firstname FROM tasks INNER JOIN userTask ON userTask.idTask = tasks.idTask INNER JOIN users ON users.idUser = userTask.idUser INNER JOIN state ON state.idState = tasks.idState;";
+    } else {
+        getTask = "SELECT tasks.nameTask, tasks.descriptionTask, tasks.idTask, state.nameState, state.idState, users.firstname FROM tasks INNER JOIN userTask ON userTask.idTask = tasks.idTask INNER JOIN users ON users.idUser = userTask.idUser INNER JOIN state ON state.idState = tasks.idState WHERE users.idUser=?;";
+    }
+    bdd.query(getTask, [req.userId], (error, result) => {
         if (error) throw error;
         res.json(result);
-        console.log(req.userId);
-        
+        console.log(req.userId);        
     });
 });
 
@@ -150,7 +130,9 @@ router.get('/getNbUserByIdState/:idState', (req, res) => {
 
 
 // Avec authentifaction 
-router.post('/addTask', authentification, (req, res) => {
+
+
+router.post('/addTask', auth.authentification, (req, res) => {
     const { nameTask, descriptionTask, idState } = req.body;
     const addTask = "INSERT INTO tasks (nameTask, descriptionTask, idState) VALUES (?,?,?);";
     bdd.query(addTask, [nameTask, descriptionTask, idState], (error, result) => {
@@ -169,6 +151,8 @@ router.post('/addTask', authentification, (req, res) => {
     });
 });
 
+
+
 // Modifier une task
 router.patch('/updateTask/:idTask', (req, res) => {
     const { idTask } = req.params;
@@ -181,8 +165,8 @@ router.patch('/updateTask/:idTask', (req, res) => {
 
 });
 
-// Suppr une task On peut utiliser router.delete
-router.delete('/deleteTaskById/:idTask', (req, res) => {
+// Suppr une task
+router.delete('/deleteTaskById/:idTask', auth.authentification, (req, res) => {
     const { idTask } = req.params;
     const deleteTaskById = "DELETE FROM tasks WHERE idTask =?;";
     bdd.query(deleteTaskById, [idTask], (error, result) => {
