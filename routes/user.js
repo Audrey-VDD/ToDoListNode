@@ -52,11 +52,6 @@ router.post('/login', (req, res) => {
     })
 });
 
-
-
-
-
-
 // Ajouter user avec mot de passe crypté
 router.post('/addUser', (req, res) => {
     const { firstname, lastname, password, mail } = req.body;
@@ -104,7 +99,10 @@ router.post('/updateUser/:id', (req, res) => {
 });
 
 // Afficher tous les users
-router.get('/getAllUser', (req, res) => {
+router.get('/getAllUser', auth.authentification, (req, res) => {
+    if (req.role != "admin") {
+        return res.status(401).send('Vous n\'êtes pas admin')
+    }
     const getAllUsers = "SELECT * FROM users;";
     bdd.query(getAllUsers, (error, result) => {
         if (error) throw error;
